@@ -1,0 +1,46 @@
+version: 2
+jobs:
+  build:
+    environment:
+      - DOCKER_IMAGE_NAME: prom/prometheus
+      - QUAY_IMAGE_NAME: quay.io/prometheus/prometheus
+      - REPO_PATH: github.com/prometheus/prometheus
+    machine:
+      enabled: true
+    steps:
+      - checkout
+      - run: make promu
+      - run: promu crossbuild
+      - run: ln -s .build/linux-amd64/prometheus prometheus
+      - run: ln -s .build/linux-amd64/promtool promtool
+      - run:
+          name: Build Docker images
+          command: |
+            if [ -n "$CIRCLE_TAG" ]; then
+              make docker DOCKER_IMAGE_NAME=$DOCKER_IMAGE_NAME DOCKER_IMAGE_TAG=$CIRCLE_TAG
+              make docker DOCKER_IMAGE_NAME=$QUAY_IMAGE_NAME DOCKER_IMAGE_TAG=$CIRCLE_TAG
+            else
+              make docker DOCKER_IMAGE_NAME=$DOCKER_IMAGE_NAME
+              make docker DOCKER_IMAGE_NAME=$QUAY_IMAGE_NAME
+            fi
+      - store_artifacts:
+          path: ./.build
+          destination: binaries
+      - run: docker images
+  test:
+    environment:
+      - DOCKER_TEST_IMAGE_NAME: quay.io/prometheus/golang-builder:1.9-base
+      - REPO_PATH: github.com/prometheus/prometheus
+    machine:
+      enabled: true
+    steps:
+      - checkout
+      - run: docker run --rm -t -v "$(pwd):/app" "${DOCKER_TEST_IMAGE_NAME}" -i "${REPO_PATH}" -T
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - build
+      - test:
+          requires:
+            - build
